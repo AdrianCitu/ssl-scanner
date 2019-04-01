@@ -82,6 +82,9 @@ class BurpExtender(IBurpExtender, ITab):
             self.addToSitemapCheckbox.setEnabled(False)
         self.setupPanel.add(self.addToSitemapCheckbox)
 
+        self.scanSiteMapHostCheckbox = JCheckBox('Scan sitemap hosts', True)
+        self.setupPanel.add(self.scanSiteMapHostCheckbox)
+
         self._topPanel.add(self.setupPanel, BorderLayout.PAGE_START)
         
         # Status bar
@@ -137,7 +140,7 @@ class BurpExtender(IBurpExtender, ITab):
         print "SSL Scanner custom menu loaded"
 
 
-        self.scannerCheck = ScannerCheck(self)
+        self.scannerCheck = ScannerCheck(self, self.scanSiteMapHostCheckbox.isSelected)
         callbacks.registerScannerCheck(self.scannerCheck)
         print "SSL Scanner check registered"
 
@@ -429,15 +432,39 @@ class ScannerMenu(IContextMenuFactory):
 
 
 class ScannerCheck(IScannerCheck) :
-    def __init__(self, scannerInstance) :
+    def __init__(self, scannerInstance, checkBoxSelected) :
         self.scannerInstance = scannerInstance
+        self.scanSiteMapHostCheckboxIsSelected = checkBoxSelected
+
+    def doPassiveScan(self, baseReqRes):
+
+        if(not self.scanSiteMapHostCheckboxIsSelected):
+            return None
+
+        # Get URL from request and check if the host has already been scanned by our tool
+        httpService = baseReqRes.getHttpService()
+        host, port, protocol = httpService.getHost(), httpService.getPort(), httpService.getProtocol()
+
+        print "[SSL Scanner] Do passive scan: ",host,port,protocol
+        return self.doScan(baseReqRes)
 
     def doActiveScan(self, baseReqRes, insPoint) :
+
+        if(not self.scanSiteMapHostCheckboxIsSelected):
+            return None
+
         # Get URL from request and check if the host has already been scanned by our tool
         httpService = baseReqRes.getHttpService()
         host, port, protocol = httpService.getHost(), httpService.getPort(), httpService.getProtocol()
 
         print "[SSL Scanner] Do active scan: ",host,port,protocol
+        return self.doScan(baseReqRes)
+    
+    def doScan(self, baseReqRes) :
+
+        httpService = baseReqRes.getHttpService()
+        host, port, protocol = httpService.getHost(), httpService.getPort(), httpService.getProtocol()
+
         # Check if already scanned
         for scannedHost, scannedPort in self.scannerInstance.scannedHost :
             if scannedHost == host and scannedPort == port :
@@ -451,10 +478,6 @@ class ScannerCheck(IScannerCheck) :
             self.scannerInstance._callbacks.issueAlert("Scan finished for %s:%d" % (host, port))
 
             return issues
-        return None
-    
-    def doPassiveScan(self, baseReqRes) :
-        print "[SSL Scanner] Do passive scan"
         return None
 
     def consolidateDuplicateIssues(self, old, new) :
